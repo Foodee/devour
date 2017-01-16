@@ -25,6 +25,7 @@ const railsParamsSerializer = require('./middleware/json-api/rails-params-serial
 const sendRequestMiddleware = require('./middleware/request')
 const deserializeResponseMiddleware = require('./middleware/json-api/res-deserialize')
 const processErrors = require('./middleware/json-api/res-errors')
+const createRelationMiddleware = require('./middleware/json-api/req-create-relation')
 
 let jsonApiMiddleware = [
   jsonApiHttpBasicAuthMiddleware,
@@ -323,6 +324,15 @@ class JsonApi {
       data: payload
     }
     return this.runMiddleware(req)
+  }
+
+  createWithRelation (modelName, attributes, relationships) {
+    let req = {
+      method: 'POST',
+      url: this.urlFor({model: modelName}),
+      data: createRelationMiddleware.formatReqPayload({ modelName, attributes, relationships })
+    }
+    return createRelationMiddleware.runArbitraryRequest(req, this.headers)
   }
 
   update (modelName, payload) {
