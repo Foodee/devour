@@ -242,6 +242,10 @@ describe('JsonApi', () => {
         expect(jsonApi.one('bar', '1').all('foo').urlFor()).to.eql('http://myapi.com/bars/1/foos/')
       })
 
+      it('should construct the relationships URL', () => {
+        expect(jsonApi.one('bar', '1').relationships().all('foo').urlFor()).to.eql('http://myapi.com/bars/1/relationships/foos/')
+      })
+
       it('should construct resource urls with urlFor', () => {
         expect(jsonApi.urlFor({model: 'foo', id: '1'})).to.eql('http://myapi.com/foos/1/')
         expect(jsonApi.one('foo', '1').urlFor()).to.eql('http://myapi.com/foos/1/')
@@ -348,9 +352,9 @@ describe('JsonApi', () => {
       jsonApi.define('product', {
         title: ''
       })
-      jsonApi.find('product', 1).then((product) => {
-        expect(product.id).to.eql('1')
-        expect(product.title).to.eql('Some Title')
+      jsonApi.find('product', 1).then(({ data, errors, meta, links }) => {
+        expect(data.id).to.eql('1')
+        expect(data.title).to.eql('Some Title')
         done()
       }).catch(err => console.log(err))
     })
@@ -379,11 +383,11 @@ describe('JsonApi', () => {
       jsonApi.define('product', {
         title: ''
       })
-      jsonApi.findAll('product').then((products) => {
-        expect(products[0].id).to.eql('1')
-        expect(products[0].title).to.eql('Some Title')
-        expect(products[1].id).to.eql('2')
-        expect(products[1].title).to.eql('Another Title')
+      jsonApi.findAll('product').then(({ data, errors, meta, links }) => {
+        expect(data[0].id).to.eql('1')
+        expect(data[0].title).to.eql('Some Title')
+        expect(data[1].id).to.eql('2')
+        expect(data[1].title).to.eql('Another Title')
         done()
       }).catch(err => console.log(err))
     })
@@ -395,6 +399,7 @@ describe('JsonApi', () => {
           expect(payload.req.method).to.be.eql('POST')
           expect(payload.req.url).to.be.eql('http://myapi.com/foos')
           expect(payload.req.data).to.be.eql({title: 'foo'})
+          expect(payload.req.params).to.be.eql({include: 'something'})
           return {}
         }
       }
@@ -405,7 +410,30 @@ describe('JsonApi', () => {
         title: ''
       })
 
-      jsonApi.create('foo', {title: 'foo'}).then(() => done()).catch(() => done())
+      jsonApi.create('foo', {title: 'foo'}, {include: 'something'})
+        .then(() => done()).catch(() => done())
+    })
+
+    it('should make basic update call', (done) => {
+      let inspectorMiddleware = {
+        name: 'inspector-middleware',
+        req: (payload) => {
+          expect(payload.req.method).to.be.eql('PATCH')
+          expect(payload.req.url).to.be.eql('http://myapi.com/foos')
+          expect(payload.req.data).to.be.eql({title: 'foo'})
+          expect(payload.req.params).to.be.eql({include: 'something'})
+          return {}
+        }
+      }
+
+      jsonApi.middleware = [inspectorMiddleware]
+
+      jsonApi.define('foo', {
+        title: ''
+      })
+
+      jsonApi.update('foo', {title: 'foo'}, {include: 'something'})
+        .then(() => done()).catch(() => done())
     })
 
     it('should include meta information on response objects', (done) => {
@@ -426,10 +454,146 @@ describe('JsonApi', () => {
       jsonApi.define('product', {
         title: ''
       })
-      jsonApi.findAll('product').then((products) => {
-        expect(products.meta.totalObjects).to.eql(1)
-        expect(products[0].id).to.eql('1')
-        expect(products[0].title).to.eql('Some Title')
+      jsonApi.findAll('product').then(({ data, errors, meta, links }) => {
+        expect(meta.totalObjects).to.eql(1)
+        expect(data[0].id).to.eql('1')
+        expect(data[0].title).to.eql('Some Title')
+        done()
+      }).catch(err => console.log(err))
+    })
+
+    it('should include meta information on response data objects', (done) => {
+      mockResponse(jsonApi, {
+        data: {
+          meta: {
+            totalObjects: 1
+          },
+          data: [{
+            id: '1',
+            type: 'products',
+            attributes: {
+              title: 'Some Title'
+            },
+            meta: {
+              totalAttributes: 1
+            }
+          }]
+        }
+      })
+      jsonApi.define('product', {
+        title: ''
+      })
+      jsonApi.findAll('product').then(({ data, errors, meta, links }) => {
+        expect(data[0].meta.totalAttributes).to.eql(1)
+        expect(data[0].id).to.eql('1')
+        expect(data[0].title).to.eql('Some Title')
+        done()
+      }).catch(err => console.log(err))
+    })
+
+    it('should include links information on response objects', (done) => {
+      mockResponse(jsonApi, {
+        data: {
+          meta: {
+            totalObjects: 13
+          },
+          data: [{
+            id: '1',
+            type: 'products',
+            attributes: {
+              title: 'Some Title'
+            }
+          }],
+          links: {
+            self: 'http://example.com/products?page[number]=3&page[size]=1',
+            first: 'http://example.com/products?page[number]=1&page[size]=1',
+            prev: 'http://example.com/products?page[number]=2&page[size]=1',
+            next: 'http://example.com/products?page[number]=4&page[size]=1',
+            last: 'http://example.com/products?page[number]=13&page[size]=1'
+          }
+        }
+      })
+      jsonApi.define('product', {
+        title: ''
+      })
+      jsonApi.findAll('product').then(({ data, errors, meta, links }) => {
+        expect(links.self).to.eql('http://example.com/products?page[number]=3&page[size]=1')
+        expect(links.first).to.eql('http://example.com/products?page[number]=1&page[size]=1')
+        expect(links.prev).to.eql('http://example.com/products?page[number]=2&page[size]=1')
+        expect(links.next).to.eql('http://example.com/products?page[number]=4&page[size]=1')
+        expect(links.last).to.eql('http://example.com/products?page[number]=13&page[size]=1')
+        expect(data[0].id).to.eql('1')
+        expect(data[0].title).to.eql('Some Title')
+        done()
+      }).catch(err => console.log(err))
+    })
+
+    it('should include links information on response data objects', (done) => {
+      mockResponse(jsonApi, {
+        data: {
+          meta: {
+            totalObjects: 13
+          },
+          data: [{
+            id: '1',
+            type: 'products',
+            attributes: {
+              title: 'Some Title'
+            },
+            links: {
+              self: 'http://example.com/products/1'
+            }
+          }],
+          links: {
+            self: 'http://example.com/products?page[number]=3&page[size]=1',
+            first: 'http://example.com/products?page[number]=1&page[size]=1',
+            prev: 'http://example.com/products?page[number]=2&page[size]=1',
+            next: 'http://example.com/products?page[number]=4&page[size]=1',
+            last: 'http://example.com/products?page[number]=13&page[size]=1'
+          }
+        }
+      })
+      jsonApi.define('product', {
+        title: ''
+      })
+      jsonApi.findAll('product').then(({ data, errors, meta, links }) => {
+        expect(data[0].links.self).to.eql('http://example.com/products/1')
+        expect(data[0].id).to.eql('1')
+        expect(data[0].title).to.eql('Some Title')
+        done()
+      }).catch(err => console.log(err))
+    })
+
+    it('should include errors information on response objects', (done) => {
+      mockResponse(jsonApi, {
+        data: {
+          data: [{
+            id: '1',
+            type: 'products',
+            attributes: {
+              title: 'Some Title'
+            }
+          }],
+          errors: [
+            {
+              status: 422,
+              source: { pointer: '/data/attributes/first-name' },
+              title: 'Invalid Attribute',
+              detail: 'First name must contain at least three characters.'
+            }
+          ]
+        }
+      })
+      jsonApi.define('product', {
+        title: ''
+      })
+      jsonApi.findAll('product').then(({ data, errors, meta, links }) => {
+        expect(errors[0].status).to.eql('422')
+        expect(errors[0].source.pointer).to.eql('/data/attributes/first-name')
+        expect(errors[0].title).to.eql('Invalid Attribute')
+        expect(errors[0].detail).to.eql('First name must contain at least three characters.')
+        expect(data[0].id).to.eql('1')
+        expect(data[0].title).to.eql('Some Title')
         done()
       }).catch(err => console.log(err))
     })
@@ -457,8 +621,8 @@ describe('JsonApi', () => {
       jsonApi.define('product', {
         title: ''
       })
-      jsonApi.find('product', 1).then((product) => {
-        expect(product).to.eql(null)
+      jsonApi.find('product', 1).then(({ data, errors, meta, links }) => {
+        expect(data).to.eql(null)
         done()
       }).catch(err => console.log(err))
     })
@@ -493,6 +657,301 @@ describe('JsonApi', () => {
       jsonApi.middleware = [jsonApiDeleteMiddleware, inspectorMiddleware]
 
       jsonApi.destroy('foo', 1).then(() => done()).catch(() => done())
+    })
+
+    it('should accept a data payload on DELETE requests when provided as a single argument', (done) => {
+      let inspectorMiddleware = {
+        name: 'inspector-middleware',
+        req: (payload) => {
+          expect(payload.req.method).to.be.eql('DELETE')
+          expect(payload.req.data).to.be.an('object')
+          expect(payload.req.data.data).to.be.an('array')
+          expect(payload.req.url).to.be.eql('http://myapi.com/foos/1/relationships/bars')
+          return {}
+        }
+      }
+
+      jsonApi.middleware = [jsonApiDeleteMiddleware, inspectorMiddleware]
+
+      const payload = [
+        {type: 'bar', id: 2},
+        {type: 'bar', id: 3}
+      ]
+
+      jsonApi.one('foo', 1).relationships().all('bar').destroy(payload).then(() => done()).catch(() => done())
+    })
+
+    it.skip('should throw an error while attempting to access undefined model', function (done) {
+      expect(function () { jsonApi.findAll('derp').then(done).catch(done) }).to.throwException(/API resource definition for model/)
+    })
+  })
+
+  describe('Complex API calls', () => {
+    it('should work on bidirectional connected entities', (done) => {
+      mockResponse(jsonApi, {
+        data: {
+          data: {
+            id: '1',
+            type: 'product',
+            attributes: {
+              title: 'Some Title'
+            },
+            relationships: {
+              company: {
+                data: {
+                  type: 'company',
+                  id: '42'
+                }
+              }
+            }
+          },
+          included:
+            [{
+              type: 'company',
+              id: '42',
+              attributes: {
+                brand: 'Cool Company'
+              },
+              relationships: {
+                products: {
+                  data: [{
+                    type: 'product',
+                    id: '1'
+                  },
+                  {
+                    type: 'product',
+                    id: '2'
+                  }]
+                }
+              }
+            },
+            {
+              id: '1',
+              type: 'product',
+              attributes: {
+                title: 'Some Title'
+              },
+              relationships: {
+                company: {
+                  data: {
+                    type: 'company',
+                    id: '42'
+                  }
+                }
+              }
+            }
+            ]
+        }
+      })
+
+      jsonApi.define('product', {
+        title: '',
+        company: {
+          jsonApi: 'hasOne',
+          type: 'company'
+        }
+      })
+      jsonApi.define('company', {
+        brand: '',
+        products: {
+          jsonApi: 'hasMany',
+          type: 'product'
+        }
+      })
+      jsonApi.find('product', 42, { include: 'company,company.products' }).then(({ data, errors, meta, links }) => {
+        expect(data.id).to.eql('1')
+        expect(data.title).to.eql('Some Title')
+        expect(data.company.id).to.eql('42')
+        expect(data.company.brand).to.eql('Cool Company')
+        expect(data.company.products[0].id).to.eql('1')
+        expect(data.company.products[0].title).to.eql('Some Title')
+        done()
+      }).catch(err => console.log(err))
+    })
+
+    it('should not cache the second request', (done) => {
+      mockResponse(jsonApi, {
+        data: {
+          data: [{
+            id: '42',
+            type: 'clan',
+            attributes: {
+              title: 'MyClan'
+            },
+            relationships: {
+              leader: {
+                data: {
+                  type: 'player',
+                  id: '5'
+                }
+              },
+              memberships: {
+                data: [{
+                  type: 'clanMembership',
+                  id: '15'
+                }, {
+                  type: 'clanMembership',
+                  id: '16'
+                }]
+              }
+            }
+          }],
+          included:
+            [{
+              type: 'clanMembership',
+              id: '15',
+              relationships: {
+                clan: {
+                  data: {
+                    type: 'clan',
+                    id: '42'
+                  }
+                },
+                player: {
+                  data: {
+                    type: 'player',
+                    id: '5'
+                  }
+                }
+              }
+            }, {
+              type: 'clanMembership',
+              id: '16',
+              relationships: {
+                clan: {
+                  data: {
+                    type: 'clan',
+                    id: '42'
+                  }
+                },
+                player: {
+                  data: {
+                    type: 'player',
+                    id: '6'
+                  }
+                }
+              }
+            }, {
+              type: 'player',
+              id: '5',
+              attributes: {
+                name: 'Dragonfire'
+              }
+            }]
+        }
+      })
+
+      jsonApi.define('clan', {
+        title: '',
+        leader: {
+          jsonApi: 'hasOne',
+          type: 'player'
+        },
+        memberships: {
+          jsonApi: 'hasMany',
+          type: 'clanMembership'
+        }
+      })
+      jsonApi.define('clanMembership', {
+        clan: {
+          jsonApi: 'hasOne',
+          type: 'clan'
+        },
+        player: {
+          jsonApi: 'hasOne',
+          type: 'player'
+        }
+      })
+      jsonApi.define('player', {
+        name: ''
+      })
+
+      jsonApi.findAll('clan', { include: 'memberships' }).then(({ data, errors, meta, links }) => {
+        // console.log('request 1', clans);
+        // console.log('memberships', clans[0].memberships);
+        expect(data[0].memberships.length).to.eql(2)
+        // expect(clans[0].memberships[0].clan.id).to.eql("42")
+        // expect(clans[0].memberships[1].clan.id).to.eql("42")
+        // second request
+        mockResponse(jsonApi, {
+          data: {
+            data: {
+              id: '42',
+              type: 'clan',
+              attributes: {
+                title: 'MyClan'
+              },
+              relationships: {
+                memberships: {
+                  data: [{
+                    type: 'clanMembership',
+                    id: '15'
+                  }, {
+                    type: 'clanMembership',
+                    id: '16'
+                  }]
+                }
+              }
+            },
+            included:
+            [{
+              type: 'clanMembership',
+              id: '15',
+              relationships: {
+                clan: {
+                  data: {
+                    type: 'clan',
+                    id: '42'
+                  }
+                },
+                player: {
+                  data: {
+                    type: 'player',
+                    id: '5'
+                  }
+                }
+              }
+            }, {
+              type: 'clanMembership',
+              id: '16',
+              relationships: {
+                clan: {
+                  data: {
+                    type: 'clan',
+                    id: '42'
+                  }
+                },
+                player: {
+                  data: {
+                    type: 'player',
+                    id: '6'
+                  }
+                }
+              }
+            }, {
+              type: 'player',
+              id: '5',
+              attributes: {
+                name: 'Dragonfire'
+              }
+            }, {
+              type: 'player',
+              id: '6',
+              attributes: {
+                name: 'nicooga'
+              }
+            }]
+          }
+        })
+        jsonApi.find('clan', 42, { include: 'memberships,memberships.player' }).then(({ data, errors, meta, links }) => {
+          // console.log('request 2: ', clan);
+          expect(data.memberships[0].player.name).to.eql('Dragonfire')
+          // expect(clan.memberships[0].clan.id).to.eql('42')
+          expect(data.memberships[1].player.name).to.eql('nicooga')
+          // expect(clan.memberships[1].clan.id).to.eql('42')
+          done()
+        }).catch(err => console.log(err))
+      }).catch(err => console.log(err))
     })
   })
 
@@ -604,9 +1063,9 @@ describe('JsonApi', () => {
         }
       })
 
-      jsonApi.get().then((foos) => {
-        expect(foos[0].id).to.eql('1')
-        expect(foos[0].title).to.eql('foo 1')
+      jsonApi.get().then(({ data, errors, meta, links }) => {
+        expect(data[0].id).to.eql('1')
+        expect(data[0].title).to.eql('foo 1')
         done()
       }).catch(err => console.log(err))
     })

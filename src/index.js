@@ -1,10 +1,10 @@
 const axios = require('axios')
 const pluralize = require('pluralize')
 const _ = require('lodash')
-const Promise = require('es6-promise').Promise
+require('es6-promise').polyfill()
 const deserialize = require('./middleware/json-api/_deserialize')
 const serialize = require('./middleware/json-api/_serialize')
-const Minilog = require('minilog')
+const Logger = require('./logger')
 
 /*
  *   == JsonApiMiddleware
@@ -80,7 +80,6 @@ class JsonApi {
     this.serialize = serialize
     this.builderStack = []
     this.resetBuilderOnCall = !!options.resetBuilderOnCall
-    this.logger = Minilog('devour')
     if (options.pluralize === false) {
       this.pluralize = s => s
       this.pluralize.singular = s => s
@@ -90,15 +89,15 @@ class JsonApi {
       this.pluralize = pluralize
     }
     this.trailingSlash = options.trailingSlash === true ? _.forOwn(_.clone(defaults.trailingSlash), (v, k, o) => { _.set(o, k, true) }) : options.trailingSlash
-    options.logger ? Minilog.enable() : Minilog.disable()
+    options.logger ? Logger.enable() : Logger.disable()
 
     if (deprecatedConstructors(arguments)) {
-      this.logger.warn('Constructor (apiUrl, middleware) has been deprecated, initialize Devour with an object.')
+      Logger.warn('Constructor (apiUrl, middleware) has been deprecated, initialize Devour with an object.')
     }
   }
 
   enableLogging (enabled = true) {
-    enabled ? Minilog.enable() : Minilog.disable()
+    enabled ? Logger.enable() : Logger.disable()
   }
 
   one (model, id) {
@@ -108,6 +107,11 @@ class JsonApi {
 
   all (model) {
     this.builderStack.push({model: model, path: this.collectionPathFor(model)})
+    return this
+  }
+
+  relationships () {
+    this.builderStack.push({path: 'relationships'})
     return this
   }
 
@@ -148,7 +152,7 @@ class JsonApi {
     return this.runMiddleware(req)
   }
 
-  post (payload, params = {}) {
+  post (payload, params = {}, meta = {}) {
     let lastRequest = _.chain(this.builderStack).last()
 
     let req = {
@@ -156,7 +160,8 @@ class JsonApi {
       url: this.urlFor(),
       model: lastRequest.get('model').value(),
       data: payload,
-      params
+      params,
+      meta
     }
 
     if (this.resetBuilderOnCall) {
@@ -166,7 +171,7 @@ class JsonApi {
     return this.runMiddleware(req)
   }
 
-  patch (payload, params = {}) {
+  patch (payload, params = {}, meta = {}) {
     let lastRequest = _.chain(this.builderStack).last()
 
     let req = {
@@ -174,7 +179,8 @@ class JsonApi {
       url: this.urlFor(),
       model: lastRequest.get('model').value(),
       data: payload,
-      params
+      params,
+      meta
     }
 
     if (this.resetBuilderOnCall) {
@@ -185,30 +191,31 @@ class JsonApi {
   }
 
   destroy () {
+    let req = null
+
     if (arguments.length === 2) {
-      let req = {
+      req = {
         method: 'DELETE',
         url: this.urlFor({model: arguments[0], id: arguments[1]}),
         model: arguments[0],
         data: {}
       }
-      return this.runMiddleware(req)
     } else {
-      let lastRequest = _.chain(this.builderStack).last()
+      const lastRequest = _.chain(this.builderStack).last()
 
-      let req = {
+      req = {
         method: 'DELETE',
         url: this.urlFor(),
         model: lastRequest.get('model').value(),
-        data: {}
+        data: arguments.length === 1 ? arguments[0] : {}
       }
 
       if (this.resetBuilderOnCall) {
         this.resetBuilder()
       }
-
-      return this.runMiddleware(req)
     }
+
+    return this.runMiddleware(req)
   }
 
   insertMiddlewareBefore (middlewareName, newMiddleware) {
@@ -281,7 +288,7 @@ class JsonApi {
         return this.applyResponseMiddleware(responsePromise)
       })
       .catch((err) => {
-        this.logger.error(err)
+        Logger.error(err)
         let errorPromise = Promise.resolve(err)
         return this.applyErrorMiddleware(errorPromise).then(err => {
           return Promise.reject(err)
@@ -316,12 +323,14 @@ class JsonApi {
     return this.runMiddleware(req)
   }
 
-  create (modelName, payload) {
+  create (modelName, payload, params = {}, meta = {}) {
     let req = {
       method: 'POST',
       url: this.urlFor({model: modelName}),
       model: modelName,
-      data: payload
+      params: params,
+      data: payload,
+      meta: meta
     }
     return this.runMiddleware(req)
   }
@@ -335,17 +344,23 @@ class JsonApi {
     return createRelationMiddleware.runArbitraryRequest(req, this.headers)
   }
 
-  update (modelName, payload) {
+  update (modelName, payload, params = {}, meta = {}) {
     let req = {
       method: 'PATCH',
       url: this.urlFor({model: modelName, id: payload.id}),
       model: modelName,
-      data: payload
+      data: payload,
+      params: params,
+      meta: meta
     }
     return this.runMiddleware(req)
   }
 
   modelFor (modelName) {
+    if (!this.models[modelName]) {
+      throw new Error(`API resource definition for model "${modelName}" not found.`)
+    }
+
     return this.models[modelName]
   }
 

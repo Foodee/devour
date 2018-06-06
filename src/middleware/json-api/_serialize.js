@@ -14,8 +14,8 @@ function resource (modelName, item) {
   let serializedAttributes = {}
   let serializedRelationships = {}
   let serializedResource = {}
-  if (model.options.serializer) {
-    return model.options.serializer.call(this, item)
+  if (options.serializer) {
+    return options.serializer.call(this, item)
   }
   _.forOwn(model.attributes, (value, key) => {
     if (isReadOnly(key, readOnly)) {
@@ -29,7 +29,14 @@ function resource (modelName, item) {
   })
 
   serializedResource.type = typeName
-  serializedResource.attributes = serializedAttributes
+
+  var attrValues = Object.keys(serializedAttributes).map(key => {
+    return serializedAttributes[key]
+  })
+
+  if (Boolean(attrValues) && attrValues.filter(val => val === undefined).length !== attrValues.length) {
+    serializedResource.attributes = serializedAttributes
+  }
 
   if (Object.keys(serializedRelationships).length > 0) {
     serializedResource.relationships = serializedRelationships

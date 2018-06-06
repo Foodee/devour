@@ -1,23 +1,39 @@
+const Logger = require('../../logger')
+
 function buildErrors (serverErrors) {
   if (!serverErrors) {
-    console.log('Unidentified error')
+    Logger.error('Unidentified error')
     return
   } else {
     let errors = {}
-    serverErrors.errors.forEach((error) => {
-      errors[errorKey(error.source)] = error.title
-    })
+    if (serverErrors.errors) {
+      for (let [index, error] of serverErrors.errors.entries()) {
+        errors[errorKey(index, error.source)] = {title: error.title, detail: error.detail}
+      }
+    }
+    if (serverErrors.error) {
+      errors['data'] = {title: serverErrors.error}
+    }
     return errors
   }
 }
 
-function errorKey (source) {
+function errorKey (index, source) {
+  if (!source || source.pointer == null) {
+    return index
+  }
   return source.pointer.split('/').pop()
 }
 
 module.exports = {
   name: 'errors',
   error: function (payload) {
-    return buildErrors(payload.data)
+    if (payload.response) {
+      return buildErrors(payload.response.data)
+    }
+    if (payload instanceof Error) {
+      return payload
+    }
+    return null
   }
 }

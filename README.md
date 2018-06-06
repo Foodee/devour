@@ -5,6 +5,7 @@
 -------------------------------------------------
 
 [![Build Status](https://travis-ci.org/twg/devour.svg?branch=master)](https://travis-ci.org/twg/devour)
+[![Known Vulnerabilities](https://snyk.io/test/github/twg/devour/badge.svg)](https://snyk.io/test/github/twg/devour)
 
 
 The [JSON API specification](http://jsonapi.org/format/) has given us a sensible convention to build our API's against. It's flexible, well thought out, and comes fully loaded with clear answers to questions like pagination, filtering, sparse fields, and relationships.
@@ -47,6 +48,8 @@ jsonApi.create('post', {
   title: 'hello',
   content: 'some content',
   tags: ['one', 'two']
+}, {
+  include: 'tags'
 })
 
 // To update...
@@ -55,6 +58,8 @@ jsonApi.update('post', {
   title: 'new title',
   content: 'new content',
   tags: ['new tag']
+}, {
+  include: 'tags'
 })
 
 // To destroy...
@@ -102,8 +107,8 @@ jsonApi.define('comment', {
   comment: ''
 })
 
-let post = jsonApi.findAll('post', {include: 'comments'})
-// => post.comment will be populated with any comments included by your API
+let { data, errors, meta, links } = jsonApi.findAll('post', {include: 'comments'})
+// => data.comment will be populated with any comments included by your API
 ```
 
 ### Flexibility
@@ -115,7 +120,7 @@ Devour uses a fully middleware based approach. This allows you to easily manipul
 
 ### Your First Middleware
 
-Adding your own middleware is easy. It's just a simple JavaScript object that has a `name`, `req`, and/or `res` property. The `req` or `res` property is a function that receives a `payload`, which houses all the details of the request cycle _(inspect it for yourself to learn more)_. For async operations, your `req` or `res` methods can return a promise, which will need to resolve before the middleware chain continues. Otherwise, you may just manipulate the `payload` as needed and return it immediately.
+Adding your own middleware is easy. It's just a simple JavaScript object that has a `name`, `req`, and/or `res` property. The `req` or `res` property is a function that receives a `payload`, which houses all the details of the request cycle _(see documentation below)_. For async operations, your `req` or `res` methods can return a promise, which will need to resolve before the middleware chain continues. Otherwise, you may just manipulate the `payload` as needed and return it immediately.
 
 ```js
 let requestMiddleware = {
@@ -147,6 +152,47 @@ jsonApi.insertMiddlewareBefore('axios-request', requestMiddleware)
 jsonApi.insertMiddlewareAfter('response', responseMiddleware)
 jsonApi.replaceMiddleware('errors', errorMiddleware)
 ```
+
+#### The payload object
+
+The `payload` object that gets passed to your middleware function has the following shape:
+
+* `data` - JSON data contained in request/response body
+* `headers` - An object containing the headers for the request/response
+* `method` - A string representing the HTTP verb used, e.g. `'GET'` or `'PATCH'`
+* `model` - The model that initiated this request
+* `params` - An object containing the keys/values passed in the query params of the request
+* `url` - The URL to which the request was sent
+
+The payload for response middleware contains these additional fields:
+
+* `config` - An object of low-level config data
+* `request` - The original XMLHttpRequest object used to make the request
+* `status` - HTTP status code for the request, e.g. 200
+* `statusText` - Text representation of the HTTP status, e.g. "OK", "Created"
+
+### Your Second Middleware
+
+This request middleware may be handy for live queries as it permits the last pending request to be cancelled (via Axios [request cancellation feature](https://github.com/axios/axios#cancellation)).
+```
+let cancellableRequest = {
+    name: 'axios-cancellable-request',
+    req: function (payload) {
+        let jsonApi = payload.jsonApi
+        return jsonApi.axios(payload.req, {
+            cancelToken: new jsonApi.axios.CancelToken(function executor(c) {
+                // An executor function receives a cancel function as a parameter
+                jsonApi.cancel = c;
+            })
+        })
+    }
+}
+
+jsonApi.replaceMiddleware('axios-request', cancellableRequest)
+
+// jsonApi.cancel() will cancel the last pending request
+```
+
 
 ### Options
 
@@ -210,7 +256,7 @@ jsonApi.define('order', {
 })
 
 let payables = [{id: 4, type: 'subtotal'}, {id: 5, type: 'tax'}]
-let order = jsonApi.all('order').post({ name: 'first', payables })
+let { data, errors, meta, links } = jsonApi.all('order').post({ name: 'first', payables })
 /* => POST http://api.yoursite.com/orders
 {
   type: orders,
@@ -226,4 +272,33 @@ let order = jsonApi.all('order').post({ name: 'first', payables })
     }
   }
 } */
+```
+
+### Migrating from Devour v1.x
+
+For convenience, Devour v1.x would simply return the deserialized data as the response.
+
+```js
+jsonApi.define('post', {
+  title: '',
+  content: ''
+})
+
+let post = jsonApi.findAll('post')
+// => post.title will be populated with the title returned by your API
+```
+
+Devour v2.x focuses on meeting the requirements of the JSON API specification which introduces a bit more complexity out of necessity. In addition to the deserialized collection or resource data, the response contains document level errors, meta, and links information as well.
+
+```js
+jsonApi.define('post', {
+  title: '',
+  content: ''
+})
+
+let { data, errors, meta, links } = jsonApi.findAll('post')
+// => data.title will be populated with the title returned by your API
+// => errors will be populated with any errors returned by your API
+// => meta will be populated with any meta data returned by your API
+// => links will be populated with any document level links returned by your API
 ```
