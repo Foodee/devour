@@ -57,6 +57,5 @@
     "minilog": "^3.0.0",
     "pluralize": "^1.2.1",
     "qs": "^6.1.0"
-  },
-  "private": true
+  }
 }
